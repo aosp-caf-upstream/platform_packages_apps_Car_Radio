@@ -24,7 +24,6 @@ import android.content.Context;
 import android.content.res.Resources;
 import android.graphics.Point;
 import android.support.annotation.NonNull;
-import android.support.car.utils.ColumnCalculator;
 import android.support.v4.view.animation.FastOutSlowInInterpolator;
 import android.support.v7.widget.CardView;
 import android.view.Display;
@@ -32,6 +31,8 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.view.WindowManager;
+
+import androidx.car.utils.ColumnCalculator;
 
 /**
  * A animation manager that is responsible for the start and exiting animation for the
@@ -92,7 +93,7 @@ public class RadioAnimationManager {
         Resources res = mContext.getResources();
         mCardColumnSpan = res.getInteger(R.integer.column_card_default_column_span);
         mCornerRadius = res.getDimensionPixelSize(R.dimen.car_preset_item_radius);
-        mActionPanelHeight = res.getDimensionPixelSize(R.dimen.action_panel_height);
+        mActionPanelHeight = res.getDimensionPixelSize(R.dimen.car_action_bar_height);
         mPresetFinalHeight = res.getDimensionPixelSize(R.dimen.car_preset_item_height);
         mFabSize = res.getDimensionPixelSize(R.dimen.stream_fab_size);
         mPresetFabSize = res.getDimensionPixelSize(R.dimen.car_presets_play_button_size);
