@@ -24,6 +24,7 @@ LOCAL_SRC_FILES := $(call all-java-files-under, src) $(call all-Iaidl-files-unde
 LOCAL_AIDL_INCLUDES := $(call all-Iaidl-files-under, src)
 
 LOCAL_PACKAGE_NAME := CarRadioApp
+LOCAL_PRIVATE_PLATFORM_APIS := true
 
 LOCAL_CERTIFICATE := platform
 
@@ -34,12 +35,7 @@ LOCAL_PRIVILEGED_MODULE := true
 LOCAL_USE_AAPT2 := true
 
 LOCAL_STATIC_ANDROID_LIBRARIES += \
-    android-support-car \
-    android-support-design \
-    android-support-v4 \
-    android-support-v7-appcompat \
-    android-support-v7-cardview \
-    android-support-v7-recyclerview \
+    $(ANDROID_SUPPORT_CAR_TARGETS) \
     car-radio-service
 
 LOCAL_RESOURCE_DIR := $(LOCAL_PATH)/res
