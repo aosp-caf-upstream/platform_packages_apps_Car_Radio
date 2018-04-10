@@ -17,13 +17,14 @@
 package com.android.car.radio;
 
 import android.annotation.Nullable;
+import android.hardware.radio.ProgramSelector;
 import android.support.v7.widget.RecyclerView;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 
-import com.android.car.radio.service.RadioStation;
+import com.android.car.radio.media.Program;
 
 import java.util.List;
 
@@ -40,9 +41,9 @@ public class PresetsAdapter extends RecyclerView.Adapter<PresetsViewHolder>
     // Only one type of view in this adapter.
     private static final int PRESETS_VIEW_TYPE = 0;
 
-    private RadioStation mActiveRadioStation;
+    private Program mActiveProgram;
 
-    private List<RadioStation> mPresets;
+    private List<Program> mPresets;
     private OnPresetItemClickListener mPresetClickListener;
     private OnPresetItemFavoriteListener mPresetFavoriteListener;
 
@@ -54,9 +55,9 @@ public class PresetsAdapter extends RecyclerView.Adapter<PresetsViewHolder>
         /**
          * Method called when an item in the preset list has been clicked.
          *
-         * @param radioStation The {@link RadioStation} corresponding to the clicked preset.
+         * @param selector The {@link ProgramSelector} corresponding to the clicked preset.
          */
-        void onPresetItemClicked(RadioStation radioStation);
+        void onPresetItemClicked(ProgramSelector selector);
     }
 
     /**
@@ -68,9 +69,10 @@ public class PresetsAdapter extends RecyclerView.Adapter<PresetsViewHolder>
         /**
          * Method called when an item's favorite status has been toggled
          *
-         * @param radioStation The {@link RadioStation} corresponding to the clicked preset.
+         * @param program The {@link Program} corresponding to the clicked preset.
+         * @param saveAsFavorite Whether the program should be saved or removed as a favorite.
          */
-        void onPresetItemFavoriteChanged(RadioStation radioStation, boolean saveAsFavorite);
+        void onPresetItemFavoriteChanged(Program program, boolean saveAsFavorite);
     }
 
     /**
@@ -90,7 +92,7 @@ public class PresetsAdapter extends RecyclerView.Adapter<PresetsViewHolder>
     /**
      * Sets the given list as the list of presets to display.
      */
-    public void setPresets(List<RadioStation> presets) {
+    public void setPresets(List<Program> presets) {
         mPresets = presets;
         notifyDataSetChanged();
     }
@@ -100,8 +102,8 @@ public class PresetsAdapter extends RecyclerView.Adapter<PresetsViewHolder>
      * this adapter. This will cause that station to be highlighted in the list. If the station
      * passed to this method does not match any of the presets, then none will be highlighted.
      */
-    public void setActiveRadioStation(RadioStation station) {
-        mActiveRadioStation = station;
+    public void setActiveRadioStation(Program program) {
+        mActiveProgram = program;
         notifyDataSetChanged();
     }
 
@@ -116,10 +118,13 @@ public class PresetsAdapter extends RecyclerView.Adapter<PresetsViewHolder>
 
     @Override
     public void onBindViewHolder(PresetsViewHolder holder, int position) {
-        RadioStation station = mPresets.get(position);
-        boolean isActiveStation = station.equals(mActiveRadioStation);
-
-        holder.bindPreset(station, isActiveStation, getItemCount());
+        if (getPresetCount() == 0) {
+            holder.bindPreset(mActiveProgram, true, getItemCount(), false);
+            return;
+        }
+        Program station = mPresets.get(position);
+        boolean isActiveStation = station.getSelector().equals(mActiveProgram.getSelector());
+        holder.bindPreset(station, isActiveStation, getItemCount(), true);
     }
 
     @Override
@@ -129,7 +134,12 @@ public class PresetsAdapter extends RecyclerView.Adapter<PresetsViewHolder>
 
     @Override
     public int getItemCount() {
-        return mPresets == null ? 0 : mPresets.size();
+        int numPresets = getPresetCount();
+        return (numPresets == 0) ? 1 : numPresets;
+    }
+
+    private int getPresetCount() {
+        return (mPresets == null) ? 0 : mPresets.size();
     }
 
     @Override
@@ -143,14 +153,21 @@ public class PresetsAdapter extends RecyclerView.Adapter<PresetsViewHolder>
             Log.v(TAG, String.format("onPresetClicked(); item count: %d; position: %d",
                     getItemCount(), position));
         }
-
         if (mPresetClickListener != null && getItemCount() > position) {
-            mPresetClickListener.onPresetItemClicked(mPresets.get(position));
+            if (getPresetCount() == 0) {
+                mPresetClickListener.onPresetItemClicked(mActiveProgram.getSelector());
+                return;
+            }
+            mPresetClickListener.onPresetItemClicked(mPresets.get(position).getSelector());
         }
     }
 
     private void handlePresetFavoriteChanged (int position, boolean saveAsFavorite) {
         if (mPresetFavoriteListener != null && getItemCount() > position) {
+            if (getPresetCount() == 0) {
+                mPresetFavoriteListener.onPresetItemFavoriteChanged(mActiveProgram, saveAsFavorite);
+                return;
+            }
             mPresetFavoriteListener.onPresetItemFavoriteChanged(
                     mPresets.get(position), saveAsFavorite);
         }

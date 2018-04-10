@@ -19,6 +19,8 @@ package com.android.car.radio;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.hardware.radio.ProgramList;
+import android.hardware.radio.ProgramSelector;
 import android.hardware.radio.RadioManager;
 import android.hardware.radio.RadioMetadata;
 import android.hardware.radio.RadioTuner;
@@ -35,16 +37,18 @@ import android.util.Log;
 import android.support.v4.media.MediaBrowserCompat.MediaItem;
 import android.support.v4.media.MediaBrowserServiceCompat;
 
-import com.android.car.radio.demo.RadioDemo;
+import com.android.car.radio.media.Program;
 import com.android.car.radio.media.BrowseTree;
 import com.android.car.radio.media.TunerSession;
 import com.android.car.radio.service.IRadioCallback;
 import com.android.car.radio.service.IRadioManager;
 import com.android.car.radio.service.RadioRds;
 import com.android.car.radio.service.RadioStation;
+import com.android.car.radio.platform.ProgramSelectorExt;
 import com.android.car.radio.platform.RadioManagerExt;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 
 /**
@@ -66,8 +70,13 @@ public class RadioService extends MediaBrowserServiceCompat
      */
     private static final int RADIO_TUNER_REOPEN_DELAY_MS = 5000;
 
+    private final Object mLock = new Object();
+
     private int mReOpenRadioTunerCount = 0;
     private final Handler mHandler = new Handler();
+
+    private RadioStorage mRadioStorage;
+    private final RadioStorage.PresetsChangeListener mPresetsListener = this::onPresetsChanged;
 
     private RadioTuner mRadioTuner;
 
@@ -86,6 +95,7 @@ public class RadioService extends MediaBrowserServiceCompat
 
     private BrowseTree mBrowseTree;
     private TunerSession mMediaSession;
+    private ProgramList mProgramList;
 
     /**
      * Whether or not this {@link RadioService} currently has audio focus, meaning it is the
@@ -119,38 +129,25 @@ public class RadioService extends MediaBrowserServiceCompat
             Log.d(TAG, "onCreate()");
         }
 
+        mRadioStorage = RadioStorage.getInstance(this);
+
         mAudioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         mRadioAudioAttributes = new AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                 .build();
 
-        // TODO(b/73950974): remove demo mode
-        boolean isDemo = SystemProperties.getBoolean(RadioDemo.DEMO_MODE_PROPERTY, false);
-        if (isDemo) {
-            initializeDemo();
-        } else {
-            initialze();
-        }
+        initialze();
 
         mBrowseTree = new BrowseTree(this);
         mMediaSession = new TunerSession(this, mBrowseTree, mBinder);
         setSessionToken(mMediaSession.getSessionToken());
 
-        mBrowseTree.setAmFmRegionConfig(isDemo ? null : mRadioManager.getAmFmRegionConfig());
-    }
+        mBrowseTree.setAmFmRegionConfig(mRadioManager.getAmFmRegionConfig());
+        openRadioBandInternal(mCurrentRadioBand);
 
-    /**
-     * Initializes this service to use a demo {@link IRadioManager}.
-     *
-     * @see RadioDemo
-     */
-    private void initializeDemo() {
-        if (Log.isLoggable(TAG, Log.DEBUG)) {
-            Log.d(TAG, "initializeDemo()");
-        }
-
-        mBinder = RadioDemo.getInstance(this /* context */).createDemoManager();
+        mRadioStorage.addPresetsChangeListener(mPresetsListener);
+        onPresetsChanged();
     }
 
     /**
@@ -167,10 +164,18 @@ public class RadioService extends MediaBrowserServiceCompat
             Log.d(TAG, "onDestroy()");
         }
 
+        mRadioStorage.removePresetsChangeListener(mPresetsListener);
         mMediaSession.release();
         close();
 
         super.onDestroy();
+    }
+
+    private void onPresetsChanged() {
+        synchronized (mLock) {
+            mBrowseTree.setFavorites(new HashSet<>(mRadioStorage.getPresets()));
+            mMediaSession.notifyFavoritesChanged();
+        }
     }
 
     /**
@@ -190,6 +195,8 @@ public class RadioService extends MediaBrowserServiceCompat
         mCurrentRadioBand = radioBand;
         if (mRadioTuner == null) {
             mRadioTuner = mRadioManager.openSession(mInternalRadioTunerCallback, null);
+            mProgramList = mRadioTuner.getDynamicProgramList(null);
+            mBrowseTree.setProgramList(mProgramList);
         }
 
         if (Log.isLoggable(TAG, Log.DEBUG)) {
@@ -305,6 +312,10 @@ public class RadioService extends MediaBrowserServiceCompat
 
         abandonAudioFocus();
 
+        if (mProgramList != null) {
+            mProgramList.close();
+            mProgramList = null;
+        }
         if (mRadioTuner != null) {
             mRadioTuner.close();
             mRadioTuner = null;
@@ -346,24 +357,13 @@ public class RadioService extends MediaBrowserServiceCompat
          * as a {@link android.hardware.radio.RadioTuner.Callback}.
          */
         @Override
-        public void tune(RadioStation radioStation) {
-            if (mRadioManager == null || radioStation == null
+        public void tune(ProgramSelector sel) {
+            if (mRadioManager == null || sel == null
                     || requestAudioFocus() != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
                 return;
             }
 
-            if (mRadioTuner == null || radioStation.getRadioBand() != mCurrentRadioBand) {
-                int radioStatus = openRadioBandInternal(radioStation.getRadioBand());
-                if (radioStatus == RadioManager.STATUS_ERROR) {
-                    return;
-                }
-            }
-
-            int status = mRadioTuner.tune(radioStation.getChannelNumber(), 0 /* subChannel */);
-
-            if (Log.isLoggable(TAG, Log.DEBUG)) {
-                Log.d(TAG, "Tuning to station: " + radioStation + "\n\tstatus: " + status);
-            }
+            mRadioTuner.tune(sel);
         }
 
         /**
@@ -465,6 +465,16 @@ public class RadioService extends MediaBrowserServiceCompat
             }
 
             return mRadioTuner.getMute();
+        }
+
+        @Override
+        public void addFavorite(Program program) {
+            mRadioStorage.storePreset(program);
+        }
+
+        @Override
+        public void removeFavorite(ProgramSelector sel) {
+            mRadioStorage.removePreset(sel);
         }
 
         /**
@@ -634,10 +644,7 @@ public class RadioService extends MediaBrowserServiceCompat
             // re-opening of the radio tuner.
             if (status == RadioTuner.ERROR_HARDWARE_FAILURE
                     || status == RadioTuner.ERROR_SERVER_DIED) {
-                if (mRadioTuner != null) {
-                    mRadioTuner.close();
-                    mRadioTuner = null;
-                }
+                close();
 
                 // Attempt to re-open the RadioTuner. Each time the radio tuner fails to open, the
                 // mReOpenRadioTunerCount will be incremented.
