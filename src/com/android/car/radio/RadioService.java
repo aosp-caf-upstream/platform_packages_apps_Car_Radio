@@ -23,7 +23,6 @@ import android.hardware.radio.ProgramList;
 import android.hardware.radio.ProgramSelector;
 import android.hardware.radio.RadioManager;
 import android.hardware.radio.RadioManager.ProgramInfo;
-import android.hardware.radio.RadioMetadata;
 import android.hardware.radio.RadioTuner;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
@@ -31,26 +30,23 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.RemoteException;
-import android.os.SystemProperties;
-import android.support.annotation.Nullable;
-import android.text.TextUtils;
-import android.util.Log;
 import android.support.v4.media.MediaBrowserCompat.MediaItem;
 import android.support.v4.media.MediaBrowserServiceCompat;
+import android.util.Log;
 
-import com.android.car.radio.media.Program;
 import com.android.car.radio.media.BrowseTree;
+import com.android.car.radio.media.Program;
 import com.android.car.radio.media.TunerSession;
+import com.android.car.radio.platform.ImageMemoryCache;
+import com.android.car.radio.platform.RadioManagerExt;
 import com.android.car.radio.service.IRadioCallback;
 import com.android.car.radio.service.IRadioManager;
-import com.android.car.radio.platform.ImageMemoryCache;
-import com.android.car.radio.platform.ProgramInfoExt;
-import com.android.car.radio.platform.ProgramSelectorExt;
-import com.android.car.radio.platform.RadioManagerExt;
+import com.android.car.radio.storage.RadioStorage;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * A persistent {@link Service} that is responsible for opening and closing a {@link RadioTuner}.
@@ -159,6 +155,7 @@ public class RadioService extends MediaBrowserServiceCompat
 
         mRadioStorage.removePresetsChangeListener(mPresetsListener);
         mMediaSession.release();
+        mRadioManager.getRadioTunerExt().close();
         close();
 
         super.onDestroy();
@@ -214,7 +211,8 @@ public class RadioService extends MediaBrowserServiceCompat
         if (status == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
             mHasAudioFocus = true;
 
-            // Receiving audio focus means that the radio is un-muted.
+            mRadioManager.getRadioTunerExt().setMuted(false);
+
             for (IRadioCallback callback : mRadioTunerCallbacks) {
                 try {
                     callback.onRadioMuteChanged(false);
@@ -353,23 +351,13 @@ public class RadioService extends MediaBrowserServiceCompat
         }
 
         private boolean setMuted(boolean mute) {
-            if (mRadioTuner == null) {
-                Log.e(TAG, "RadioManager is null");
-                return false;
-            }
-
-            int result = mRadioTuner.setMute(mute);
-
-            if (result != RadioManager.STATUS_OK) {
-                Log.e(TAG, "setMute() failed: " + result);
-                return false;
-            }
+            if (!mRadioManager.getRadioTunerExt().setMuted(mute)) return false;
 
             for (IRadioCallback callback : mRadioTunerCallbacks) {
                 try {
                     callback.onRadioMuteChanged(mute);
                 } catch (RemoteException e) {
-                    Log.e(TAG, "mute() notify failed: " + e.getMessage());
+                    Log.e(TAG, "onRadioMuteChanged callback failed", e);
                 }
             }
 
@@ -403,12 +391,7 @@ public class RadioService extends MediaBrowserServiceCompat
          */
         @Override
         public boolean isMuted() {
-            if (mRadioTuner == null) {
-                Log.e(TAG, "RadioManager is null");
-                return true;
-            }
-
-            return mRadioTuner.getMute();
+            return mRadioManager.getRadioTunerExt().isMuted();
         }
 
         @Override
@@ -504,7 +487,7 @@ public class RadioService extends MediaBrowserServiceCompat
                 Log.d(TAG, "Program info changed: " + info);
             }
 
-            mCurrentProgram = info;
+            mCurrentProgram = Objects.requireNonNull(info);
             mMediaSession.notifyProgramInfoChanged(info);
 
             for (IRadioCallback callback : mRadioTunerCallbacks) {
