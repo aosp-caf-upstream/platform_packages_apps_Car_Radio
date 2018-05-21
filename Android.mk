@@ -16,12 +16,15 @@
 
 ifneq ($(TARGET_BUILD_PDK), true)
 
-LOCAL_PATH:= $(call my-dir)
+LOCAL_PATH := $(call my-dir)
+CAR_BROADCASTRADIO_SUPPORTLIB_PATH := packages/apps/Car/libs/car-broadcastradio-support
 
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES := $(call all-java-files-under, src) $(call all-Iaidl-files-under, src)
-LOCAL_AIDL_INCLUDES := $(call all-Iaidl-files-under, src)
+LOCAL_AIDL_INCLUDES := \
+    $(LOCAL_PATH)/src \
+    $(CAR_BROADCASTRADIO_SUPPORTLIB_PATH)/src
 
 LOCAL_PACKAGE_NAME := CarRadioApp
 LOCAL_PRIVATE_PLATFORM_APIS := true
@@ -34,11 +37,14 @@ LOCAL_PRIVILEGED_MODULE := true
 
 LOCAL_USE_AAPT2 := true
 
+LOCAL_JAVA_LIBRARIES += android.car
+
 LOCAL_STATIC_ANDROID_LIBRARIES += \
     android-support-car \
     android-support-constraint-layout \
-    car-stream-ui-lib \
-    car-apps-common
+    car-apps-common \
+    car-broadcastradio-support \
+    car-stream-ui-lib
 
 LOCAL_STATIC_JAVA_LIBRARIES := \
     android-arch-lifecycle-livedata \
@@ -70,8 +76,6 @@ LOCAL_RESOURCE_DIR := $(LOCAL_PATH)/res
 LOCAL_PROGUARD_ENABLED := disabled
 
 LOCAL_DEX_PREOPT := false
-
-include packages/services/Car/car-support-lib/car-support.mk
 
 include $(BUILD_PACKAGE)
 
